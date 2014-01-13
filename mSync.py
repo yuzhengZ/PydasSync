@@ -7,6 +7,7 @@ import re
 import shutil
 import hashlib
 import getopt
+import pprint
 import pydas
 # import logging
 # 
@@ -57,18 +58,85 @@ def sanity_check(mode, data_dir, midas_url, midas_user_email, midas_apikey, mida
         return False
     return True
 
-def synchronize_data(mode, data_dir, midas_url, midas_user_email, midas_apikey, midas_folder_id):
+def synchronize_data(mode, local_root_dir, midas_root_folder_id, midas_url):
     """
-    Synchronize data bwteen data_dir and the given folder in the midas instance
+    Synchronize data between local_root_dir and the midas_root_folder in the Midas instance
     """
-    # walk through data directory in the server
-#    pydas.login(email=midas_user_email, api_key=midas_apikey, url=midas_url)
-    for data_root, data_sub_folders, data_files in os.walk(data_dir):
-#        midas_root = pydas.session.communicator.folder_get(pydas.session.token, midas_folder_id)
-        for data_folder in data_sub_folders:
-            print "%s has subdirectory %s" % (data_root, data_folder)
-        for data_filename in data_files:
-            print "%s has file %s, its md5 checksum is %s" % (data_root, data_filename, __md5_for_file(os.path.join(data_root, data_filename)))
+    # Lookup Table: Directory name (including path) in data server -> Midas folder id
+    midas_folder_id_lookup_table = {}
+    midas_folder_id_lookup_table[local_root_dir] = midas_root_folder_id
+    # Synchronization status
+    sync_status = { "only_midas" : {"entire_folders": [ ],
+                                    "items": [ ] },
+                    "only_local" : {"entire_dirs": [ ], 
+                                    "files": [ ] },
+                    "needs_update": {"files": [ ] }
+                  }
+    
+    midas_children_folders = { }
+    midas_children_items = { }
+    # walk through local root directory
+    for root, dirs, files in os.walk(local_root_dir, topdown=True):
+        # Ignore hidden directories and files
+        dirs[:] = [d for d in dirs if not d[0] == '.']
+        files = [f for f in files if not f[0] == '.']
+        midas_children_folders.clear()
+        midas_children_items.clear()
+        # For a given local directory (root), query Midas to get its children folders and items
+        if root in midas_folder_id_lookup_table.keys():
+            for element_type, element_list in pydas.session.communicator.folder_children(pydas.session.token, midas_folder_id_lookup_table[root]).iteritems():
+                if element_type == 'folders':
+                    for midas_folder in element_list:
+                        midas_children_folders[midas_folder['name']] = midas_folder
+                elif element_type == 'items':
+                    for midas_item in element_list:
+                        midas_children_items[midas_item['name']] = midas_item
+        else:
+            dirs[:] = [ ]
+            files[:] = [ ]
+            if root not in sync_status["only_local"]["entire_dirs"]:
+                sync_status["only_local"]["entire_dirs"].append(root)
+        # For a given local directory (root), check its sub directories (dirs)
+        for dir_name in dirs:
+            local_dir_path = os.path.join(root, dir_name)
+            if dir_name in midas_children_folders.keys():
+                midas_folder_id_lookup_table[local_dir_path] = midas_children_folders[dir_name]['folder_id']
+                midas_children_folders[dir_name]['in_local'] = True
+            else:
+                sync_status["only_local"]["entire_dirs"].append(local_dir_path)
+
+        # For a given local directory (root), check its files (files)
+        for filename in files:
+            local_file_path = os.path.join(root, filename)
+            if root in sync_status["only_local"]["entire_dirs"]:
+                continue
+            elif filename not in midas_children_items.keys():
+                sync_status["only_local"]["files"].append(local_file_path)
+            else:
+                midas_children_items[filename]['in_local'] = True
+                midas_item_info = pydas.session.communicator.item_get(pydas.session.token, midas_children_items[filename]['item_id'])
+                local_file_checksum = __md5_for_file(local_file_path)
+                # Assumptions for the items in Midas: 1) use the latest revision for each item 
+                #                                     2) each item only contains one bitstream
+                midas_bitstream_checksum = ''
+                try:
+                    midas_bitstream_checksum = midas_item_info['revisions'][-1]['bitstreams'][0]['checksum']
+                except Exception:
+                    pass
+                if local_file_checksum != midas_bitstream_checksum:
+                    sync_status["needs_update"]["files"].append(local_file_path)       
+        # Check midas_only folders and items
+        for folder_name, folder_info in midas_children_folders.iteritems():
+            if 'in_local' not in folder_info.keys() or not folder_info['in_local']:
+                sync_status["only_midas"]["entire_folders"].append(os.path.join(midas_url, 'folder', folder_info['folder_id']))
+        for item_name, item_info in midas_children_items.iteritems():
+             if 'in_local' not in item_info.keys() or not item_info['in_local']:
+                 sync_status["only_midas"]["items"].append(os.path.join(midas_url, 'item', item_info['item_id']))
+        
+    # Print synchronization status   
+    print ("The synchronization information between local directory %s and Midas folder %s is as below: " % (local_root_dir, os.path.join(midas_url, 'folder', midas_root_folder_id)))
+    pp = pprint.PrettyPrinter(indent = 2)
+    pp.pprint(sync_status)
 
 class Usage(Exception):
     def __init__(self, msg):
@@ -79,21 +147,21 @@ def main():
         opts, args = getopt.getopt(sys.argv[1:], "hm:d:u:e:a:f:", ["help", "mode=", "datadir=", "url=", "email=", "apikey=", "folderid=" ])
     except getopt.error, msg:
         raise Usage(msg)
-    mode = ''
-    data_dir = ''
-    midas_url = ''
-    midas_user_email = ''
-    midas_apikey = ''
-    midas_folder_id = ''
+    mode = 'info'
+    local_root_dir = '/Users/yuzheng/Source/NeuroDevData'
+    midas_url = 'http://localhost/midas'
+    midas_user_email = 'yuzheng.zhou@kitware.com'
+    midas_apikey = 'yhcWxg/VyYdCLT5kN9vnWwOg/JsTfNtD'
+    midas_root_folder_id = '12'
 #    log_dir = '/tmp'
     for opt, arg in opts:
         if opt in ('-h', "--help"):
-            print 'mSync.py -m (info|upload|download) -d <data_directory> -u <midas_url> -e <midas_user_email>  -a <midas_api_key> -f <midas_folder_id>'
+            print 'mSync.py -m (info|upload|download) -d <local_root_directory> -u <midas_url> -e <midas_user_email>  -a <midas_api_key> -f <midas_root_folder_id>'
             sys.exit()
         elif opt in ("-m", "--mode"):
             mode = arg.lower()
-        elif opt in ("-d", "--datadir"):
-            data_dir = arg
+        elif opt in ("-l", "--localdir"):
+            local_root_dir = arg
         elif opt in ("-u", "--url"):
             midas_url = arg
         elif opt in ("-e", "--email"):
@@ -101,7 +169,7 @@ def main():
         elif opt in ("-a", "--apikey"):
             midas_apikey = arg
         elif opt in ("-f", "--folderid"):
-            midas_folder_id = arg
+            midas_root_folder_id = arg
 
 #     # set up normal logger
 #     logger.addHandler(getHandler(log_dir.strip()))
@@ -116,11 +184,11 @@ def main():
 #     sys.stderr = err_log
 
     # sanity check for input parameters
-    input_sanity = sanity_check(mode, data_dir, midas_url, midas_user_email, midas_apikey, midas_folder_id)
+    input_sanity = sanity_check(mode, local_root_dir, midas_url, midas_user_email, midas_apikey, midas_root_folder_id)
     
     # synchronize data between data_dir and midas folder
     if input_sanity:
-        synchronize_data(mode, data_dir, midas_url, midas_user_email, midas_apikey, midas_folder_id)
+        synchronize_data(mode, local_root_dir, midas_root_folder_id, midas_url)
 
 if __name__ == "__main__":
     sys.exit(main())
