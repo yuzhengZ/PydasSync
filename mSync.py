@@ -96,14 +96,10 @@ def _get_midas_folder_ancestor(midas_folder_id):
     ancestor_list = [ ]
     current_folder_id = midas_folder_id
     while int(current_folder_id) > 0:
-        try:
-            folder_info = pydas.session.communicator.folder_get(
-                pydas.session.token, current_folder_id)
-            ancestor_list.append(folder_info['name'])
-            current_folder_id = folder_info['parent_id']
-        except pydas.exceptions.PydasException as detail:
-            print "Caught PydasException: ", detail
-            pass
+        folder_info = pydas.session.communicator.folder_get(
+            pydas.session.token, current_folder_id)
+        ancestor_list.append(folder_info['name'])
+        current_folder_id = folder_info['parent_id']
     id = ancestor_list[-1].split('_', 1)[-1]
     ancestor_list[-1] = id
     if current_folder_id == '-2':
@@ -120,22 +116,14 @@ def _get_pydas_server_path(midas_folder_id):
     id = destination_list[-1]
     if ancestor_type == 'community':
         # get community name
-        try:
-            community_info = pydas.session.communicator.get_community_by_id(
+        community_info = pydas.session.communicator.get_community_by_id(
                 id, pydas.session.token)
-            destination_list[-1] = community_info['name']
-        except pydas.exceptions.PydasException as detail:
-            print "Caught PydasException: ", detail
-            pass
+        destination_list[-1] = community_info['name']
         destination_list.append('communities')
     elif ancestor_type == 'user':
         # get user name
-        try:
-            user_info = pydas.session.communicator.get_user_by_id(id)
-            destination_list[-1] = user_info['firstname'] + '_' + user_info['lastname']
-        except pydas.exceptions.PydasException as detail:
-            print "Caught PydasException: ", detail
-            pass
+        user_info = pydas.session.communicator.get_user_by_id(id)
+        destination_list[-1] = user_info['firstname'] + '_' + user_info['lastname']
         destination_list.append('users')
     else:
         print "Cannot find the pydas.upload() destination " \
@@ -152,28 +140,19 @@ def _upload_permision_check(data_dir, midas_folder_id):
         1) a Midas user is allowed to upload data to its own folders
         2) TODO: a Midas user is allowed to upload data to its community folders 
     """
-    try:
-        pydas_user_info = pydas.session.communicator.get_user_by_email(
-            pydas.session.email)
-    except pydas.exceptions.PydasException as detail:
-            print "Caught PydasException: ", detail
-            pass
+    pydas_user_info = pydas.session.communicator.get_user_by_email(pydas.session.email)
     ancestor_type, ancestor_list = _get_midas_folder_ancestor(midas_folder_id)
     id = ancestor_list[-1]
     # check if it is the user himself
     if ancestor_type == 'user' and id == pydas_user_info['user_id']:
         return True
     # check if the user joins the community
-    elif ancestor_type == 'community': 
-        try:
-            community_info = pydas.session.communicator.get_community_by_id(
-                id, pydas.session.token)
-            community_member_group_id = community_info['membergroup_id']
-            # TODO: check if the user joins the community via Pydas
-            return True
-        except pydas.exceptions.PydasException as detail:
-            print "Caught PydasException: ", detail
-            pass
+    elif ancestor_type == 'community':
+        community_info = pydas.session.communicator.get_community_by_id(
+            id, pydas.session.token)
+        community_member_group_id = community_info['membergroup_id']
+        # TODO: check if the user joins the community via Pydas
+        return True
     else:
         return False
 
