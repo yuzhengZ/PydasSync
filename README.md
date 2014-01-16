@@ -6,7 +6,7 @@ mSync, a python tool to recursively synchronize data between a local directory a
 ### Requirements
 
 * Install [Python](http://www.python.org/) version 2.6 or later
-* Install [Pydas](http://pydas.readthedocs.org/en/latest/intro.html) 0.2.26 or later
+* Install [Pydas](http://pydas.readthedocs.org/en/latest/intro.html) 0.2.27 or later
 * An [enabled](http://www.kitware.com/midaswiki/index.php/Documentation/Latest/User/Administration/ManagePlugins) web api plugin for your Midas3 instance
 * Know your Midas api key (Log in to your Midas3 instance -> My Account -> Api tab -> API key column)
 
