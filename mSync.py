@@ -31,6 +31,7 @@ import os
 import sys
 import hashlib
 import getopt
+import shutil
 import pprint
 import pydas
 
@@ -56,7 +57,7 @@ class SyncStatusDict(object):
         print ("The current synchronization information is as below: ")
         pp.pprint({"only_local" : self.only_local,
                    "only_midas" : self.only_midas,
-                   "nedds_update" : self.needs_update})
+                   "needs_update" : self.needs_update})
 
         
 class SyncSetting(object):
@@ -89,7 +90,7 @@ def _md5_for_file(file, block_size=8192):
     return md5.hexdigest()
 
 
-def _get_midas_resource_ancestor(midas_resource_id, type='folder'):
+def _get_midas_resource_ancestor(midas_resource_id, type='folder', root_folder_id=None):
     """
     Helper function to get the ancestor list for a Midas folder
     """
@@ -102,6 +103,8 @@ def _get_midas_resource_ancestor(midas_resource_id, type='folder'):
     else:
         current_folder_id = midas_resource_id
     while int(current_folder_id) > 0:
+        if current_folder_id == root_folder_id:
+            return 'folder', ancestor_list
         folder_info = pydas.session.communicator.folder_get(
             pydas.session.token, current_folder_id)
         ancestor_list.append(folder_info['name'])
@@ -119,7 +122,7 @@ def _get_pydas_resource_path(midas_resource_id, type='folder'):
     Helper function to get resource path for pydas.upload() or pydas.download()
     """
     ancestor_type, destination_list = _get_midas_resource_ancestor(
-        midas_resource_id, type)
+        midas_resource_id, type=type)
     id = destination_list[-1]
     if ancestor_type == 'community':
         # get community name
@@ -162,6 +165,20 @@ def _upload_permision_check(data_dir, midas_folder_id):
         return True
     else:
         return False
+
+
+def _get_local_download_destination(midas_resource_id, local_root_dir, 
+                                    type='folder', root_folder_id=None):
+    """
+    Helper function to get the local destination path to download a Midas resource
+    """
+    ancestor_type, destination_list = _get_midas_resource_ancestor(
+        midas_resource_id, type=type, root_folder_id=root_folder_id)
+    # use parent folder if the resource is an item
+    if type == 'item':
+        destination_list = destination_list[1:]
+    local_destination = local_root_dir + '/' +'/'.join(destination_list[::-1])
+    return local_destination
 
 
 def _query_yes_no(question, default="no"):
@@ -301,7 +318,7 @@ def check_sync_status(sync_setting):
                         continue
                 sync_status.needs_update['files'].append(
                         {'filepath': local_file_path, 
-                         'midas_upload_item_id': midas_item_info['item_id']})
+                         'midas_item_id': midas_item_info['item_id']})
       
         # check midas_only entire_folders and items
         for folder_name, folder_info in midas_children_folders.iteritems():
@@ -326,7 +343,7 @@ def mirror_data_to_midas(sync_setting, sync_status):
     """
     Mirror local data to Midas
     """
-    print "\nStart mirroring local data to Midas."
+    print "\nStart mirroring(uploading) local data to Midas."
     # upload 'local_only' data to Midas
     pydas_root_upload_destination = _get_pydas_resource_path(
         sync_setting.midas_root_folder_id)
@@ -349,7 +366,7 @@ def mirror_data_to_midas(sync_setting, sync_status):
     for file_info in sync_status.needs_update['files']:
         filepath = file_info['filepath']
         filename = os.path.basename(filepath)
-        upload_item_id = file_info['midas_upload_item_id']
+        upload_item_id = file_info['midas_item_id']
         print "Updating Item from %s" % filepath
         upload_token = pydas.session.communicator.generate_upload_token(
             pydas.session.token, upload_item_id, filename)
@@ -357,7 +374,7 @@ def mirror_data_to_midas(sync_setting, sync_status):
             upload_token, filename, itemid=upload_item_id, revision=None, filepath=filepath)
     # process 'midas_only' data
     if sync_status.only_midas['entire_folders'] or sync_status.only_midas['items']:
-        agree_to_delete = _query_yes_no("Some folders and/or files only exist in Midas. "  \
+        agree_to_delete = _query_yes_no("Some folders and/or items only exist in Midas. "  \
             "Do you want to delete them (delete operation cannot be undo)?")
         if agree_to_delete:
             for folder in sync_status.only_midas['entire_folders']:
@@ -366,42 +383,74 @@ def mirror_data_to_midas(sync_setting, sync_status):
             for item in sync_status.only_midas['items']:
                 pydas.session.communicator.delete_item(
                     pydas.session.token, os.path.basename(item))      
-    print ("Data in %s has been mirrored to %s.\n" \
+    print ("Data in %s has been mirrored(uploaded) to %s.\n" \
             % (sync_setting.local_root_dir, os.path.join(sync_setting.midas_url, 
                'folder', sync_setting.midas_root_folder_id)))
 
- 
-def download_data_to_local(sync_setting):
-    """
-    Download data from a Midas folder to a local directory
-    """
-    # currently, data can only be downloaded to an empty local directory
-    # TODO: support full data synchronization in download mode
-    entries = os.listdir(sync_setting.local_root_dir)
-    if len(entries) != 0:
-        print ("Caught a sanity check error: in download mode, " \
-                "the destination local directory %s is not empty!" % \
-                sync_setting.local_root_dir)
-        return
 
+def _download_entire_midas_folder(midas_folder_id, local_dir_path) :
+    """
+    Helper function to download an entire midas folder to a local directory
+    """
     for resource_type, resource_list in pydas.session.communicator.folder_children(
-        pydas.session.token, sync_setting.midas_root_folder_id).iteritems():
+      pydas.session.token, midas_folder_id).iteritems():
         if resource_type == 'folders':
             for midas_folder in resource_list:
                 pydas_download_source = _get_pydas_resource_path(midas_folder['folder_id'])
-                pydas.download(pydas_download_source,
-                               local_path=sync_setting.local_root_dir)
+                pydas.download(pydas_download_source, local_path=local_dir_path)
         elif resource_type == 'items':
             for midas_item in resource_list:
                 pydas_download_source = _get_pydas_resource_path(
                     midas_item['item_id'], type='item')
-                pydas.download(pydas_download_source, 
-                               local_path=sync_setting.local_root_dir)
-    print ("Data in %s has been downloaded to %s.\n" \
+                pydas.download(pydas_download_source, local_path=local_dir_path)
+
+def download_data_to_local(sync_setting, sync_status):
+    """
+    Mirror data from a Midas folder to a local directory
+    """
+    print "\nStart mirroring(downloading) data from Midas to local directory."
+    # process 'only_midas' data
+    for midas_folder in sync_status.only_midas['entire_folders']:
+        local_desitnation =_get_local_download_destination(                                                     
+            os.path.basename(midas_folder), sync_setting.local_root_dir, 
+            type='folder', root_folder_id=sync_setting.midas_root_folder_id)
+        print 'Creating Folder at %s' % local_desitnation
+        os.mkdir(local_desitnation)
+        _download_entire_midas_folder(os.path.basename(midas_folder),
+                               local_dir_path=local_desitnation)
+    for midas_item in sync_status.only_midas['items']:
+        pydas_download_source = _get_pydas_resource_path(
+            os.path.basename(midas_item), type='item')
+        local_desitnation = _get_local_download_destination(
+            os.path.basename(midas_item), sync_setting.local_root_dir, 
+            type='item', root_folder_id=sync_setting.midas_root_folder_id)
+        pydas.download(pydas_download_source, local_path=local_desitnation)
+
+    # process 'needs_update' data
+    if sync_status.needs_update['files']:
+        agree_to_overwrite = _query_yes_no("Some local files are different with corresponding items in Midas. "  \
+            "Do you want to overwrite your local copy with the Midas copy (this operation cannot be undo)?")
+        if agree_to_overwrite:
+            for file in sync_status.needs_update['files']:
+                os.remove(file['filepath'])
+                pydas_download_source = _get_pydas_resource_path(
+                    file['midas_item_id'], type='item')
+                pydas.download(pydas_download_source, os.path.dirname(file['filepath']))
+
+    # process 'only_local' data
+    if sync_status.only_local['entire_dirs'] or sync_status.only_local['files']:
+        agree_to_delete = _query_yes_no("Some directories and/or files only exist in your local disk. "  \
+            "Do you want to delete them (delete operation cannot be undo)?")
+        if agree_to_delete:
+            for dir in sync_status.only_local['entire_dirs']:
+                shutil.rmtree(dir)
+            for file in sync_status.only_local['files']:
+                os.remove(file['filepath'])
+    print ("Data in %s has been mirrored(downloaded) to %s.\n" \
             % (os.path.join(sync_setting.midas_url, 'folder',
             sync_setting.midas_root_folder_id), sync_setting.local_root_dir))
 
-       
+
 def synchronize_data(sync_setting):
     """
     Recursively synchronize data between a local directory and a Midas folder
@@ -413,7 +462,7 @@ def synchronize_data(sync_setting):
         mirror_data_to_midas(sync_setting, sync_status)
         check_sync_status(sync_setting)
     elif sync_setting.mode == "download":
-        download_data_to_local(sync_setting)
+        download_data_to_local(sync_setting, sync_status)
         check_sync_status(sync_setting)
 
      
