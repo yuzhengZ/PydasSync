@@ -414,8 +414,8 @@ def main():
 
     for opt, arg in opts:
         if opt in ('-h', '--help'):
-            print "mSync.py -m (check|upload|download) -l <local_root_directory> " \
-                "-u <midas_url> -e <midas_user_email>  -a <midas_api_key> -f <midas_root_folder_id>"
+            print "mSync.py [-m (check|upload|download)] -l <local_directory_path> " \
+                "-u <midas_url> -e <midas_user_email>  -a <midas_api_key> -f <midas_folder_id>"
             sys.exit()
         elif opt in ('-m', '--mode'):
             mode = arg.lower()
