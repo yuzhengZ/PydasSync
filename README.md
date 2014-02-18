@@ -57,7 +57,7 @@ python mSync.py --mode=upload --localdir=../msynctest/data --url=http://msyncexm
 
 ---
 setMetadata, a python tool to read metadata from an excel file and then recursively set metadata to all the items in a Midas folder.
-```
+
 ### Requirements
 
 * Install [Python](http://www.python.org/) version 2.6 or later
@@ -66,20 +66,20 @@ setMetadata, a python tool to read metadata from an excel file and then recursiv
 * An [enabled](http://www.kitware.com/midaswiki/index.php/Documentation/Latest/User/Administration/ManagePlugins) web api plugin for your Midas3 instance
 * Know your Midas api key (Log in to your Midas3 instance -> My Account -> Api tab -> API key column)
 
-# Command line usage for mSync
+# Command line usage for setMetadata
 
 #### Get usage information
 ```
-python setaMetadata.py -h
+python setMetadata.py -h
 ```
 #### Short option usage
 ```
-python setaMetadata.py -x <metadata_excel_file_path> [-s <excel_sheet_name>] -u <midas_url> -e <midas_user_email>  -a <midas_api_key> -f <midas_folder_id>
+python setMetadata.py -x <metadata_excel_file_path> [-s <excel_sheet_name>] -u <midas_url> -e <midas_user_email>  -a <midas_api_key> -f <midas_folder_id>
 ```
 
 #### Long option usage
 ```
-python setaMetadata.py --excelfile=<metadata_excel_file_path> [--sheetname=<excel_sheet_name>] --url=<midas_url> --email=<midas_user_email>  --apikey=<midas_api_key> --folderid=<midas_folder_id>
+python setMetadata.py --excelfile=<metadata_excel_file_path> [--sheetname=<excel_sheet_name>] --url=<midas_url> --email=<midas_user_email>  --apikey=<midas_api_key> --folderid=<midas_folder_id>
 ```
 
 #### Options
@@ -101,10 +101,10 @@ Short option |  Long option |         Argument            | Meaning
 To set metadata, the short option command line is
 
 ```
-python setaMetadata.py -x ../msynctest/meta.xlsx -u http://msyncexmaple.com/midas -e nobody@nowhere.com  -a asdfasdfasd2#$fasdf@asdfas -f 12
+python setMetadata.py -x ../msynctest/meta.xlsx -u http://msyncexmaple.com/midas -e nobody@nowhere.com  -a asdfasdfasd2#$fasdf@asdfas -f 12
 ```
 To set metadata, the long option command line is
 
 ```
-python mSync.py --mode=upload --excelfile=../msynctest/meta.xlsx --url=http://msyncexmaple.com/midas --email=nobody@nowhere.com  --apikey=asdfasdfasd2#$fasdf@asdfas --folderid=12
+python setMetadata.py --mode=upload --excelfile=../msynctest/meta.xlsx --url=http://msyncexmaple.com/midas --email=nobody@nowhere.com  --apikey=asdfasdfasd2#$fasdf@asdfas --folderid=12
 ```

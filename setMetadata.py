@@ -278,11 +278,12 @@ def set_matadata(midas_setting, excel_setting):
     metadata_lookup = _get_metadata_from_excel(excel_setting)
     if not metadata_lookup:
         return False
-    print "\nStart set metadata to Midas. Please be patient!"
+    print "\nStart setting metadata to Midas."
     # upload 'local_only' data to Midas
     midas_folders_ids = []
     midas_children_items = { }
     midas_folders_ids.append(midas_setting.midas_root_folder_id)
+    print "\nCollecting items' information from Midas. It may take a couple of minutes. Please be patient!"
     while midas_folders_ids:
         folder_id = midas_folders_ids.pop(0)
         for resource_type, resource_list in pydas.session.communicator.folder_children(
@@ -294,12 +295,17 @@ def set_matadata(midas_setting, excel_setting):
                 for midas_item in resource_list:
                     midas_children_items[midas_item['item_id']] = midas_item
     metadata_info = []
-    temp_list = []
-    #Assumption: item is name as xxx_xx_months_xxxxx.....     
+    temp_list = []  
     for item_id, item_info in midas_children_items.iteritems():
          metadata_info[:] = []
          temp_list[:] = []
          temp_list  = item_info['name'].split('_')
+         #Assumption: item is name as <scan_number>_<age_at_scan_month_number>months_<otherInformation> 
+         if len(temp_list) < 3 or not temp_list[1].endswith('months'):
+             print "\nThe name of item %s (item id is %s) is not in " \
+              "<scan_number>_<age_at_scan_month_number>months_<otherInformation> format, and is skipped." \
+               % (item_info['name'], item_id)
+             continue 
          scan_number = int(temp_list[0])
          age_at_scan = temp_list[1]
          if (scan_number in metadata_lookup.keys() \
@@ -313,7 +319,7 @@ def set_matadata(midas_setting, excel_setting):
                         break
                 if not found:
                     pydas.session.communicator.set_item_metadata(pydas.session.token, item_id, k, v)
-             print "\nMetadata for item %s (item id is %s) is up to date." \
+             print "\nMetadata for item %s (item id is %s) is now set (up to date)." \
                % (item_info['name'], item_id)
          else:
              print "\nCannot find the metadata for item %s (item id is %s)." \
